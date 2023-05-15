@@ -1,11 +1,30 @@
-import NextAuth, { NextAuthOptions } from "next-auth"
-import GoogleProvider from "next-auth/providers/google"
-import FacebookProvider from "next-auth/providers/facebook"
-import GithubProvider from "next-auth/providers/github"
-import TwitterProvider from "next-auth/providers/twitter"
-import Auth0Provider from "next-auth/providers/auth0"
+import NextAuth, { NextAuthOptions, Session, User } from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
+import FacebookProvider from "next-auth/providers";
+import GithubProvider from "next-auth/providers/github";
+import TwitterProvider from "next-auth/providers/twitter";
+import Auth0Provider from "next-auth/providers/auth0";
+import { signIn } from "next-auth/react";
 // import AppleProvider from "next-auth/providers/apple"
 // import EmailProvider from "next-auth/providers/email"
+
+interface CustomSession extends Session {
+  user?: {
+    name?: string | null;
+    authToken?: string | null;
+  };
+}
+
+interface CustomUser extends User {
+  authToken?: string | null;
+}
+
+interface CustomSession extends Session {
+  user?: {
+    name?: string | null;
+    authToken?: string | null;
+  };
+}
 
 // For more information on each option (and a full list of options) go to
 // https://next-auth.js.org/configuration/options
@@ -29,37 +48,51 @@ export const authOptions: NextAuthOptions = {
       },
     }),
     */
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_ID,
-      clientSecret: process.env.FACEBOOK_SECRET,
-    }),
-    GithubProvider({
-      clientId: process.env.GITHUB_ID,
-      clientSecret: process.env.GITHUB_SECRET,
-    }),
     GoogleProvider({
       clientId: process.env.GOOGLE_ID,
       clientSecret: process.env.GOOGLE_SECRET,
     }),
-    TwitterProvider({
-      clientId: process.env.TWITTER_ID,
-      clientSecret: process.env.TWITTER_SECRET,
-    }),
-    Auth0Provider({
-      clientId: process.env.AUTH0_ID,
-      clientSecret: process.env.AUTH0_SECRET,
-      issuer: process.env.AUTH0_ISSUER,
-    }),
   ],
+  session: {
+    strategy: "jwt",
+    maxAge: 24 * 60 * 60,
+  },
   theme: {
     colorScheme: "light",
   },
   callbacks: {
-    async jwt({ token }) {
-      token.userRole = "admin"
-      return token
+    async signIn({ user, account, profile, email, credentials }) {
+      const resp = await fetch("/api/login");
+      if (resp.ok) {
+        const respJson = await resp.json();
+        (user as CustomUser).authToken = respJson.token;
+        console.info("signIn", user, account, profile, email, credentials);
+        return true;
+      }
+
+      return false;
+    },
+    async jwt({ token, user }) {
+      const resp = await fetch("/api/login");
+      if (resp.ok) {
+        const respJson = await resp.json();
+        token.authToken = respJson.token;
+        console.info("jwt", token, user);
+      }
+      return token;
+    },
+    async session({ session, token, user }) {
+      const customSession = session as CustomSession;
+      if (token) {
+        customSession.user = {
+          name: token.name,
+          authToken: token.authToken as string,
+        };
+      }
+      console.info("session", session, customSession, user, token);
+      return customSession;
     },
   },
-}
+};
 
-export default NextAuth(authOptions)
+export default NextAuth(authOptions);
